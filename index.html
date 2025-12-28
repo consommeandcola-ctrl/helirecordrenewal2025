@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-<title>ドクターヘリ医師記録 v3.3</title>
+<title>ドクターヘリ活動記録 v3.3</title>
 <style>
 :root{
   --ink:#111827;--muted:#6b7280;--bg:#f2f2f7;--card:#fff;
@@ -366,7 +366,7 @@ body.dial-open{overflow:hidden;position:fixed;width:100%;}
 </head>
 <body>
 <header>
-  <h1>🚁 ドクターヘリ医師記録</h1>
+  <h1>🚁 ドクターヘリ活動記録</h1>
   <p class="sub">heli record v3.3</p>
 </header>
 
@@ -2515,8 +2515,8 @@ function render() {
 
 function fmtFinding(lbl, st) {
   if(st === 'on') return lbl;
-  if(st === '+') return `${lbl}（＋）`;
-  if(st === '-') return `${lbl}（−）`;
+  if(st === '+') return `${lbl}(+)`;
+  if(st === '-') return `${lbl}(-)`;
   return null;
 }
 
