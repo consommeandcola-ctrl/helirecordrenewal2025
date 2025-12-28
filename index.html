@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-<title>ドクターヘリ活動記録 v3.7 (2025/12/28 13:50)</title>
+<title>ドクターヘリ活動記録 v3.11 (2025/12/28 15:10)</title>
 <style>
 :root{
   --ink:#111827;--muted:#6b7280;--bg:#f2f2f7;--card:#fff;
@@ -326,7 +326,28 @@ body.dial-open{overflow:hidden;position:fixed;width:100%;}
   font-size:16px;color:#dc2626;padding:0 4px;
 }
 
-/* 問題リスト */
+/* プロブレム入力部分のレイアウト調整 */
+div.card-body > div[style*="display:flex"] {
+  display: flex !important;
+  gap: 8px;
+  margin-bottom: 10px;
+  align-items: center;
+  width: 100%;
+}
+
+#new_problem {
+  flex: 1 !important;
+  min-width: 0;
+}
+
+div.card-body > div[style*="display:flex"] .btn.small {
+  width: auto !important;
+  flex-shrink: 0;
+  padding: 10px 16px;
+  white-space: nowrap;
+}
+
+/* 追加されたアイテムの調整 */
 .problem-item{
   display:flex;
   justify-content:space-between;
@@ -340,6 +361,7 @@ body.dial-open{overflow:hidden;position:fixed;width:100%;}
   font-size:14px;
   flex:1;
   min-width:0;
+  word-break: break-all;
 }
 .problem-item .del-btn{
   margin-left:12px;
@@ -352,7 +374,6 @@ body.dial-open{overflow:hidden;position:fixed;width:100%;}
   border-radius:6px;
 }
 
-/* NIHSSボタン */
 .nihss-btn{
   min-width:36px;height:36px;
   border:1px solid var(--line);border-radius:8px;
@@ -367,7 +388,7 @@ body.dial-open{overflow:hidden;position:fixed;width:100%;}
 <body>
 <header>
   <h1>🚁 ドクターヘリ活動記録</h1>
-  <p class="sub">heli record v3.7</p>
+  <p class="sub">heli record v3.11</p>
 </header>
 
 <main>
@@ -915,7 +936,6 @@ body.dial-open{overflow:hidden;position:fixed;width:100%;}
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-// 所見定義
 const EMS_GEN_GROUPS = {
   head: {normal:['意識清明','顔色良好'], abn:['意識障害','顔面蒼白','チアノーゼ','冷汗','発熱']},
   resp: {normal:['呼吸安定','呼吸苦なし'], abn:['呼吸困難','努力呼吸','頻呼吸','起坐呼吸','陥没呼吸']},
@@ -991,7 +1011,7 @@ let state = {
     vitals: [],
     exam_tab: 'general',
     chips: {},
-    memos: {general:{head:'',resp:'',card:'',abd:'',limb:'',neuro:''},trauma:{head:'',neck:'',chest:'',abd:'',pelvis:'',limb:''},stroke:{neuro:'',motor:'',eye:'',higher:''},cpa:{body:'',head:'',trunk:''}},
+    memos: {general:{head:'',resp:'',card:'',abd:'',limb:'',neuro:''},trauma:{head:'',neck:'',chest:'',abd:'',pelvis:'',limb:''},stroke:{cn:'',motor:'',eye:'',higher:''},cpa:{body:'',head:'',trunk:''}},
     exams: {bs:false, us:false, ecg:false, fast:false, efast:false},
     exam_texts: {us:'', ecg:'', fast:'', efast:''},
     bs:120, abg_type:'', abg_data: [], exam_detail:'',
@@ -1028,24 +1048,30 @@ let state = {
 // ダイヤルピッカー
 let dialCallback = null;
 let dialWheels = [];
+
 let scrollPosition = 0;
 
 function openDial(title, wheels, callback) {
+  // 背景スクロール防止
   scrollPosition = window.pageYOffset;
   document.body.classList.add('dial-open');
   document.body.style.top = `-${scrollPosition}px`;
+  
   dialCallback = callback;
   dialWheels = wheels;
   $('#dialTitle').textContent = title;
   const body = $('#dialBody');
   body.innerHTML = '';
+  
   wheels.forEach((w, wi) => {
     const wheel = document.createElement('div');
     wheel.className = 'dial-wheel';
     wheel.innerHTML = '<div class="dial-highlight"></div>';
+    
     const scroll = document.createElement('div');
     scroll.className = 'dial-scroll';
     scroll.dataset.wheelIndex = wi;
+    
     w.options.forEach((opt, oi) => {
       const div = document.createElement('div');
       div.className = 'dial-option';
@@ -1055,321 +1081,845 @@ function openDial(title, wheels, callback) {
       if(opt.value == w.selected) div.classList.add('selected');
       scroll.appendChild(div);
     });
+    
     wheel.appendChild(scroll);
     body.appendChild(wheel);
+    
     if(w.unit) {
       const unit = document.createElement('div');
       unit.className = 'dial-unit';
       unit.textContent = w.unit;
       body.appendChild(unit);
     }
+    
+    // 現在の選択位置を記憶
     let currentIndex = w.options.findIndex(o => o.value == w.selected);
     if(currentIndex < 0) currentIndex = 0;
+    
+    // タッチスクロール（加速度付き）
     let startY = 0, lastY = 0, lastTime = 0;
     let currentOffset = -currentIndex * 40;
     let velocityY = 0;
     let animationId = null;
-    const stopAnimation = () => { if(animationId) { cancelAnimationFrame(animationId); animationId = null; } };
+    
+    const stopAnimation = () => {
+      if(animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+    };
+    
     const snapToNearest = () => {
       const optionHeight = 40;
       let newIndex = Math.round(-currentOffset / optionHeight);
       newIndex = Math.max(0, Math.min(w.options.length - 1, newIndex));
+      
       currentOffset = -newIndex * optionHeight;
       currentIndex = newIndex;
       w.selected = w.options[newIndex].value;
+      
       scroll.style.transition = 'transform 0.2s ease-out';
       scroll.style.transform = `translateY(${currentOffset}px)`;
       updateDialSelection(scroll, newIndex);
     };
+    
     const momentumScroll = () => {
       const friction = 0.92;
       const minVelocity = 0.5;
       velocityY *= friction;
       currentOffset += velocityY;
+      
       const maxOffset = 0;
       const minOffset = -(w.options.length - 1) * 40;
-      if(currentOffset > maxOffset) { currentOffset = maxOffset; velocityY = 0; }
-      else if(currentOffset < minOffset) { currentOffset = minOffset; velocityY = 0; }
+      
+      if(currentOffset > maxOffset) {
+        currentOffset = maxOffset;
+        velocityY = 0;
+      } else if(currentOffset < minOffset) {
+        currentOffset = minOffset;
+        velocityY = 0;
+      }
+      
       scroll.style.transform = `translateY(${currentOffset}px)`;
-      if(Math.abs(velocityY) > minVelocity) animationId = requestAnimationFrame(momentumScroll);
-      else snapToNearest();
+      
+      if(Math.abs(velocityY) > minVelocity) {
+        animationId = requestAnimationFrame(momentumScroll);
+      } else {
+        snapToNearest();
+      }
     };
-    scroll.addEventListener('touchstart', e => { e.preventDefault(); stopAnimation(); scroll.style.transition = 'none'; startY = e.touches[0].clientY; lastY = startY; lastTime = Date.now(); velocityY = 0; }, {passive: false});
+    
+    scroll.addEventListener('touchstart', e => {
+      e.preventDefault();
+      stopAnimation();
+      scroll.style.transition = 'none';
+      startY = e.touches[0].clientY;
+      lastY = startY;
+      lastTime = Date.now();
+      velocityY = 0;
+    }, {passive: false});
+    
     scroll.addEventListener('touchmove', e => {
       e.preventDefault();
       const y = e.touches[0].clientY;
       const dy = y - lastY;
-      currentOffset += dy * 1.5;
+      const acceleration = 1.5;
+      currentOffset += dy * acceleration;
+      
       scroll.style.transform = `translateY(${currentOffset}px)`;
-      const dt = Date.now() - lastTime;
-      if(dt > 0) velocityY = (dy * 1.5) / dt * 16;
-      lastY = y; lastTime = Date.now();
+      const now = Date.now();
+      const dt = now - lastTime;
+      if(dt > 0) {
+        velocityY = (dy * acceleration) / dt * 16;
+      }
+      lastY = y;
+      lastTime = now;
     }, {passive: false});
-    scroll.addEventListener('touchend', e => { e.preventDefault(); if(Math.abs(velocityY) > 2) animationId = requestAnimationFrame(momentumScroll); else snapToNearest(); }, {passive: false});
+    
+    scroll.addEventListener('touchend', e => {
+      e.preventDefault();
+      if(Math.abs(velocityY) > 2) {
+        animationId = requestAnimationFrame(momentumScroll);
+      } else {
+        snapToNearest();
+      }
+    }, {passive: false});
+    
     scroll.querySelectorAll('.dial-option').forEach((opt, oi) => {
       opt.addEventListener('click', e => {
-        e.stopPropagation(); currentIndex = oi; currentOffset = -oi * 40; w.selected = w.options[oi].value;
-        scroll.style.transition = 'transform 0.2s ease-out'; scroll.style.transform = `translateY(${currentOffset}px)`;
-        updateDialSelection(scroll, oi); if(dialWheels.length === 1) setTimeout(confirmDial, 200);
+        e.stopPropagation();
+        currentIndex = oi;
+        currentOffset = -oi * 40;
+        w.selected = w.options[oi].value;
+        scroll.style.transition = 'transform 0.2s ease-out';
+        scroll.style.transform = `translateY(${currentOffset}px)`;
+        updateDialSelection(scroll, oi);
+        if(dialWheels.length === 1) {
+          setTimeout(confirmDial, 200);
+        }
       });
     });
+    
     scroll.style.transform = `translateY(${currentOffset}px)`;
     updateDialSelection(scroll, currentIndex);
   });
+  
   $('#dialOverlay').classList.add('show');
   $('#dialOverlay').ontouchmove = e => e.preventDefault();
 }
 
 function updateDialSelection(scroll, index) {
-  scroll.querySelectorAll('.dial-option').forEach((o, i) => o.classList.toggle('selected', i === index));
-  dialWheels[parseInt(scroll.dataset.wheelIndex)].selected = dialWheels[parseInt(scroll.dataset.wheelIndex)].options[index].value;
+  scroll.querySelectorAll('.dial-option').forEach((o, i) => {
+    o.classList.toggle('selected', i === index);
+  });
+  const wi = parseInt(scroll.dataset.wheelIndex);
+  dialWheels[wi].selected = dialWheels[wi].options[index].value;
 }
-function closeDial(e) { if(e && e.target !== $('#dialOverlay')) return; $('#dialOverlay').classList.remove('show'); document.body.classList.remove('dial-open'); document.body.style.top = ''; window.scrollTo(0, scrollPosition); }
-function confirmDial() { if(dialCallback) dialCallback(dialWheels.map(w => w.selected)); closeDial(); }
 
+function closeDial(e) {
+  if(e && e.target !== $('#dialOverlay')) return;
+  $('#dialOverlay').classList.remove('show');
+  document.body.classList.remove('dial-open');
+  document.body.style.top = '';
+  window.scrollTo(0, scrollPosition);
+}
+
+function confirmDial() {
+  if(dialCallback) {
+    const values = dialWheels.map(w => w.selected);
+    dialCallback(values);
+  }
+  $('#dialOverlay').classList.remove('show');
+  document.body.classList.remove('dial-open');
+  document.body.style.top = '';
+  window.scrollTo(0, scrollPosition);
+}
+
+// SpO2表記を半角に修正
 function openVitalDial(type, idx, field) {
   const v = state[type].vitals[idx];
-  let wheels = [], title = '';
+  let wheels = [];
+  let title = '';
+  
   switch(field) {
-    case 'bp': title = '血圧'; wheels = [{options: genRange(0, 250, 1), selected: v.sbp, unit: '/'},{options: genRange(0, 150, 1), selected: v.dbp, unit: 'mmHg'}]; break;
-    case 'hr': title = '心拍数'; wheels = [{options: genRange(0, 250, 1), selected: v.hr, unit: 'bpm'}]; break;
-    case 'rr': title = '呼吸数'; wheels = [{options: genRange(0, 45, 1), selected: v.rr, unit: '/min'}]; break;
-    case 'spo2': title = 'SpO2'; wheels = [{options: genRange(40, 100, 1), selected: v.spo2, unit: '%'}]; break;
-    case 'bt': title = '体温'; wheels = [{options: genRangeBT(), selected: v.bt, unit: '℃'}]; break;
-    case 'gcs_e': title = 'GCS - E'; wheels = [{options: [{label:'1',value:1},{label:'2',value:2},{label:'3',value:3},{label:'4',value:4}], selected: v.gcs.e}]; break;
-    case 'gcs_v': title = 'GCS - V'; wheels = [{options: [{label:'1',value:1},{label:'2',value:2},{label:'3',value:3},{label:'4',value:4},{label:'5',value:5},{label:'T',value:'T'}], selected: v.gcs.v}]; break;
-    case 'gcs_m': title = 'GCS - M'; wheels = [{options: [{label:'1',value:1},{label:'2',value:2},{label:'3',value:3},{label:'4',value:4},{label:'5',value:5},{label:'6',value:6}], selected: v.gcs.m}]; break;
-    case 'jcs': title = 'JCS'; wheels = [{options: [{label:'0',value:'0'},{label:'1',value:'1'},{label:'2',value:'2'},{label:'3',value:'3'},{label:'10',value:'10'},{label:'20',value:'20'},{label:'30',value:'30'},{label:'100',value:'100'},{label:'200',value:'200'},{label:'300',value:'300'}], selected: v.jcs}]; break;
+    case 'bp':
+      title = '血圧';
+      wheels = [
+        {options: genRange(0, 250, 1), selected: v.sbp, unit: '/'},
+        {options: genRange(0, 150, 1), selected: v.dbp, unit: 'mmHg'}
+      ];
+      break;
+    case 'hr':
+      title = '心拍数';
+      wheels = [{options: genRange(0, 250, 1), selected: v.hr, unit: 'bpm'}];
+      break;
+    case 'rr':
+      title = '呼吸数';
+      wheels = [{options: genRange(0, 45, 1), selected: v.rr, unit: '/min'}];
+      break;
+    case 'spo2':
+      title = 'SpO2'; // 修正
+      wheels = [{options: genRange(40, 100, 1), selected: v.spo2, unit: '%'}];
+      break;
+    case 'bt':
+      title = '体温';
+      wheels = [{options: genRangeBT(), selected: v.bt, unit: '℃'}];
+      break;
+    case 'gcs_e':
+      title = 'GCS - E';
+      wheels = [{options: [{label:'1',value:1},{label:'2',value:2},{label:'3',value:3},{label:'4',value:4}], selected: v.gcs.e}];
+      break;
+    case 'gcs_v':
+      title = 'GCS - V';
+      wheels = [{options: [{label:'1',value:1},{label:'2',value:2},{label:'3',value:3},{label:'4',value:4},{label:'5',value:5},{label:'T',value:'T'}], selected: v.gcs.v}];
+      break;
+    case 'gcs_m':
+      title = 'GCS - M';
+      wheels = [{options: [{label:'1',value:1},{label:'2',value:2},{label:'3',value:3},{label:'4',value:4},{label:'5',value:5},{label:'6',value:6}], selected: v.gcs.m}];
+      break;
+    case 'jcs':
+      title = 'JCS';
+      wheels = [{options: [
+        {label:'0 (清明)',value:'0'},{label:'I-1',value:'1'},{label:'I-2',value:'2'},{label:'I-3',value:'3'},
+        {label:'II-10',value:'10'},{label:'II-20',value:'20'},{label:'II-30',value:'30'},
+        {label:'III-100',value:'100'},{label:'III-200',value:'200'},{label:'III-300',value:'300'}
+      ], selected: v.jcs}];
+      break;
   }
+  
   openDial(title, wheels, vals => {
-    if(field==='bp'){v.sbp=vals[0];v.dbp=vals[1]} else if(field==='hr')v.hr=vals[0]; else if(field==='rr')v.rr=vals[0]; else if(field==='spo2')v.spo2=vals[0]; else if(field==='bt')v.bt=vals[0]; else if(field==='gcs_e')v.gcs.e=vals[0]; else if(field==='gcs_v')v.gcs.v=vals[0]; else if(field==='gcs_m')v.gcs.m=vals[0]; else if(field==='jcs')v.jcs=vals[0];
-    if(type==='ems') renderEmsVitals(); else renderFdVitals(); updateState();
+    switch(field) {
+      case 'bp': v.sbp = vals[0]; v.dbp = vals[1]; break;
+      case 'hr': v.hr = vals[0]; break;
+      case 'rr': v.rr = vals[0]; break;
+      case 'spo2': v.spo2 = vals[0]; break;
+      case 'bt': v.bt = vals[0]; break;
+      case 'gcs_e': v.gcs.e = vals[0]; break;
+      case 'gcs_v': v.gcs.v = vals[0]; break;
+      case 'gcs_m': v.gcs.m = vals[0]; break;
+      case 'jcs': v.jcs = vals[0]; break;
+    }
+    if(type === 'ems') renderEmsVitals();
+    else renderFdVitals();
+    updateState();
   });
 }
 
-function genRange(f, t, s) { let a = []; for(let i=f; i<=t; i+=s) a.push({label: String(i), value: i}); return a; }
-function genRangeBT() { let a = []; for(let i=32.0; i<=42.0; i+=0.1) a.push({label: i.toFixed(1), value: parseFloat(i.toFixed(1))}); return a; }
-function openBsDial() { openDial('血糖値', [{options: genRange(0, 600, 1), selected: state.fd.bs||120, unit: 'mg/dL'}], vals => { state.fd.bs=vals[0]; $('#fd_bs_display').textContent=vals[0]; updateState(); }); }
+function genRange(from, to, step) {
+  const arr = [];
+  for(let i = from; i <= to; i += step) {
+    arr.push({label: String(i), value: i});
+  }
+  return arr;
+}
+
+function genRangeBT() {
+  const arr = [];
+  for(let i = 32.0; i <= 42.0; i += 0.1) {
+    arr.push({label: i.toFixed(1), value: parseFloat(i.toFixed(1))});
+  }
+  return arr;
+}
+
+function openBsDial() {
+  const currentBs = state.fd.bs || 120;
+  const wheels = [{options: genRange(0, 600, 1), selected: currentBs, unit: 'mg/dL'}];
+  openDial('血糖値', wheels, vals => {
+    state.fd.bs = vals[0];
+    $('#fd_bs').value = vals[0];
+    $('#fd_bs_display').textContent = vals[0];
+    updateState();
+  });
+}
 
 function addCpaEvent() {
-  const n = new Date(); const t = `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
-  state.fd.cpaEvents.push({ arrestTime: t, rhythm: 'Asystole', witnessed: false, bystander: false, cprStart: '', ivTime: '', adrenalineTimes: [], lt: false, intubation: false, intubationTime: '', pericardio: false, pericardioTime: '', roscTime: '', memo: '' });
-  renderCpaEvents(); updateState();
+  const now = new Date();
+  const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const newEvent = {
+    arrestTime: time,
+    rhythm: 'Asystole',
+    witnessed: false,
+    bystander: false,
+    cprStart: '',
+    ivTime: '',
+    adrenalineTimes: [],
+    lt: false,
+    intubation: false,
+    intubationTime: '',
+    pericardio: false,
+    pericardioTime: '',
+    roscTime: '',
+    memo: ''
+  };
+  state.fd.cpaEvents.push(newEvent);
+  renderCpaEvents();
+  updateState();
 }
-function deleteCpaEvent(i) { if(confirm('削除しますか?')) { state.fd.cpaEvents.splice(i, 1); renderCpaEvents(); updateState(); } }
+
+function deleteCpaEvent(idx) {
+  if(confirm('この心停止イベントを削除しますか?')) {
+    state.fd.cpaEvents.splice(idx, 1);
+    renderCpaEvents();
+    updateState();
+  }
+}
+
 function renderCpaEvents() {
-  const c = $('#cpa_events_container'); if(!c) return; c.innerHTML = '';
-  if(state.fd.cpaEvents.length === 0) { c.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">心停止イベントを追加してください</div>'; return; }
-  state.fd.cpaEvents.forEach((ev, idx) => {
-    const card = document.createElement('div'); card.className = 'vital-card'; card.style.marginBottom = '12px';
-    const flowT = (idx === 0) ? `
-      <div id="flow_times_${idx}" style="margin-top:12px;padding:12px;background:#f0f9ff;border-radius:10px;border:1px solid #0ea5e9">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-weight:600;color:#0369a1">No Flow Time</span><span id="no_flow_time_${idx}">-- 分</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="font-weight:600;color:#0369a1">Low Flow Time</span><span id="low_flow_time_${idx}">-- 分</span></div>
-      </div>` : `
-      <div id="flow_times_${idx}" style="margin-top:12px;padding:12px;background:#f0f9ff;border-radius:10px;border:1px solid #0ea5e9">
-        <div style="display:flex;justify-content:space-between"><span style="font-weight:600;color:#0369a1">Low Flow Time</span><span id="low_flow_time_${idx}">-- 分</span></div>
-      </div>`;
-    card.innerHTML = `
-      <div class="vital-header"><div style="font-weight:600">心停止イベント ${idx+1}${ev.roscTime?' (ROSC)':''}</div><button class="vital-del" onclick="deleteCpaEvent(${idx})">削除</button></div>
+  const container = $('#cpa_events_container');
+  if(!container) return;
+  container.innerHTML = '';
+  if(state.fd.cpaEvents.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">心停止イベントを追加してください</div>';
+    return;
+  }
+  state.fd.cpaEvents.forEach((event, idx) => {
+    const card = document.createElement('div');
+    card.className = 'vital-card';
+    card.style.marginBottom = '12px';
+    if(idx === 0) {
+      card.innerHTML = `
+      <div class="vital-header">
+        <div style="font-weight:600">心停止イベント ${idx + 1}${event.roscTime ? ' (ROSC)' : ''}</div>
+        <button class="vital-del" onclick="deleteCpaEvent(${idx})">削除</button>
+      </div>
       <div style="padding:12px">
-        <div class="grid2">
-          <div><label>心停止時刻</label><div class="time-row"><input type="time" value="${ev.arrestTime}" onchange="updateCpaEventField(${idx},'arrestTime',this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx},'arrestTime')">Now</button></div></div>
-          <div><label>初期波形</label><div class="vital-item" style="border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center" onclick="openCpaRhythmDial(${idx})">${ev.rhythm}</div></div>
+        <div class="grid2" style="margin-bottom:12px">
+          <div>
+            <label>心停止時刻</label>
+            <div class="time-row">
+              <input type="time" value="${event.arrestTime}" onchange="updateCpaEventField(${idx}, 'arrestTime', this.value)">
+              <button class="time-btn" onclick="setCpaEventNow(${idx}, 'arrestTime')">Now</button>
+            </div>
+          </div>
+          <div>
+            <label>初期波形</label>
+            <div class="vital-item" style="border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;text-align:center" onclick="openCpaRhythmDial(${idx})">
+              <div class="vital-value" style="font-size:16px">${event.rhythm}</div>
+            </div>
+          </div>
         </div>
         <div class="grid2" style="margin-top:12px">
-          <div class="toggle-btn ${ev.witnessed?'active':''}" onclick="toggleCpaField(${idx},'witnessed')">${ev.witnessed?'目撃あり':'目撃なし'}</div>
-          <div class="toggle-btn ${ev.bystander?'active':''}" onclick="toggleCpaField(${idx},'bystander')">${ev.bystander?'BP-CPRあり':'BP-CPRなし'}</div>
+          <div class="toggle-btn ${event.witnessed ? 'active' : ''}" onclick="toggleCpaField(${idx}, 'witnessed')">${event.witnessed ? '目撃あり' : '目撃なし'}</div>
+          <div class="toggle-btn ${event.bystander ? 'active' : ''}" onclick="toggleCpaField(${idx}, 'bystander')">${event.bystander ? 'BP-CPRあり' : 'BP-CPRなし'}</div>
         </div>
-        <h3 style="margin-top:12px">処置</h3>
+        <h3 style="margin-top:12px">蘇生処置</h3>
         <div class="grid2">
-          <div><label>CPR開始</label><div class="time-row"><input type="time" value="${ev.cprStart}" onchange="updateCpaEventField(${idx},'cprStart',this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx},'cprStart')">Now</button></div></div>
-          <div><label>末梢確保</label><div class="time-row"><input type="time" value="${ev.ivTime}" onchange="updateCpaEventField(${idx},'ivTime',this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx},'ivTime')">Now</button></div></div>
+          <div><label>胸骨圧迫開始</label><div class="time-row"><input type="time" value="${event.cprStart}" onchange="updateCpaEventField(${idx}, 'cprStart', this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx}, 'cprStart')">Now</button></div></div>
+          <div><label>末梢確保</label><div class="time-row"><input type="time" value="${event.ivTime}" onchange="updateCpaEventField(${idx}, 'ivTime', this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx}, 'ivTime')">Now</button></div></div>
         </div>
-        <div id="adrenaline_times_${idx}" style="margin-top:8px"></div>
+        <h3 style="margin-top:12px">アドレナリン投与</h3>
+        <div id="adrenaline_times_${idx}"></div>
         <button class="btn small" style="margin-top:8px" onclick="addAdrenalineTime(${idx})">＋ アドレナリン追加</button>
-        <div class="checkline" style="margin-top:12px"><label><input type="checkbox" ${ev.lt?'checked':''} onchange="updateCpaEventField(${idx},'lt',this.checked)"> LT</label><label><input type="checkbox" ${ev.intubation?'checked':''} onchange="toggleCpaIntubation(${idx})"> 挿管</label></div>
-        <div id="cpa_intubation_time_area_${idx}" style="${ev.intubation?'':'display:none'};margin-top:8px"><div class="time-row"><input type="time" value="${ev.intubationTime}" onchange="updateCpaEventField(${idx},'intubationTime',this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx},'intubationTime')">Now</button></div></div>
-        <div class="time-row" style="margin-top:12px"><label style="margin:0">ROSC時刻</label><input type="time" value="${ev.roscTime}" onchange="updateCpaEventField(${idx},'roscTime',this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx},'roscTime')">Now</button></div>
-        ${flowT}
-        <textarea class="memo" style="margin-top:12px" placeholder="メモ" onchange="updateCpaEventField(${idx},'memo',this.value)">${ev.memo}</textarea>
+        <h3 style="margin-top:12px">気道確保</h3>
+        <div class="checkline"><label><input type="checkbox" ${event.lt ? 'checked' : ''} onchange="updateCpaEventField(${idx}, 'lt', this.checked)"> LT挿入</label></div>
+        <div class="checkline" style="margin-top:8px"><label><input type="checkbox" ${event.intubation ? 'checked' : ''} onchange="toggleCpaIntubation(${idx})"> 気管挿管</label></div>
+        <div id="cpa_intubation_time_area_${idx}" style="${event.intubation ? '' : 'display:none'};margin-top:8px"><div class="time-row"><input type="time" value="${event.intubationTime}" onchange="updateCpaEventField(${idx}, 'intubationTime', this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx}, 'intubationTime')">Now</button></div></div>
+        <h3 style="margin-top:12px">その他処置</h3>
+        <div class="checkline"><label><input type="checkbox" ${event.pericardio ? 'checked' : ''} onchange="toggleCpaPericardio(${idx})"> 心膜腔穿刺</label></div>
+        <div id="cpa_pericardio_time_area_${idx}" style="${event.pericardio ? '' : 'display:none'};margin-top:8px"><div class="time-row"><input type="time" value="${event.pericardioTime}" onchange="updateCpaEventField(${idx}, 'pericardioTime', this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx}, 'pericardioTime')">Now</button></div></div>
+        <h3 style="margin-top:12px">転帰</h3>
+        <div><label>心拍再開(ROSC)時刻</label><div class="time-row"><input type="time" value="${event.roscTime}" onchange="updateCpaEventField(${idx}, 'roscTime', this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx}, 'roscTime')">Now</button></div></div>
+        <div id="flow_times_${idx}" style="margin-top:12px;padding:12px;background:#f0f9ff;border-radius:10px;border:1px solid #0ea5e9">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-weight:600;color:#0369a1">No Flow Time</span><span id="no_flow_time_${idx}" style="font-weight:600;color:#0369a1">-- 分</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-weight:600;color:#0369a1">Low Flow Time</span><span id="low_flow_time_${idx}" style="font-weight:600;color:#0369a1">-- 分</span></div>
+        </div>
+        <label style="margin-top:12px">メモ</label>
+        <textarea class="memo" placeholder="このイベントに関するメモ" onchange="updateCpaEventField(${idx}, 'memo', this.value)">${event.memo}</textarea>
       </div>`;
-    c.appendChild(card); renderAdrenalineTimes(idx); calcFlowTimes(idx);
+    } else {
+      card.innerHTML = `
+      <div class="vital-header">
+        <div style="font-weight:600">心停止イベント ${idx + 1}（再心停止）${event.roscTime ? ' (ROSC)' : ''}</div>
+        <button class="vital-del" onclick="deleteCpaEvent(${idx})">削除</button>
+      </div>
+      <div style="padding:12px">
+        <div class="grid2" style="margin-bottom:12px">
+          <div><label>心停止時刻</label><div class="time-row"><input type="time" value="${event.arrestTime}" onchange="updateCpaEventField(${idx}, 'arrestTime', this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx}, 'arrestTime')">Now</button></div></div>
+          <div><label>波形</label><div class="vital-item" style="border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;text-align:center" onclick="openCpaRhythmDial(${idx})"><div class="vital-value" style="font-size:16px">${event.rhythm}</div></div></div>
+        </div>
+        <h3 style="margin-top:12px">アドレナリン投与</h3>
+        <div id="adrenaline_times_${idx}"></div>
+        <button class="btn small" style="margin-top:8px" onclick="addAdrenalineTime(${idx})">＋ アドレナリン追加</button>
+        <h3 style="margin-top:12px">転帰</h3>
+        <div><label>心拍再開(ROSC)時刻</label><div class="time-row"><input type="time" value="${event.roscTime}" onchange="updateCpaEventField(${idx}, 'roscTime', this.value)"><button class="time-btn" onclick="setCpaEventNow(${idx}, 'roscTime')">Now</button></div></div>
+        <div id="flow_times_${idx}" style="margin-top:12px;padding:12px;background:#f0f9ff;border-radius:10px;border:1px solid #0ea5e9">
+          <div style="display:flex;justify-content:space-between"><span style="font-weight:600;color:#0369a1">Low Flow Time</span><span id="low_flow_time_${idx}" style="font-weight:600;color:#0369a1">-- 分</span></div>
+        </div>
+        <label style="margin-top:12px">メモ</label>
+        <textarea class="memo" placeholder="このイベントに関するメモ" onchange="updateCpaEventField(${idx}, 'memo', this.value)">${event.memo}</textarea>
+      </div>`;
+    }
+    container.appendChild(card);
+    renderAdrenalineTimes(idx);
+    calcFlowTimes(idx);
   });
 }
 
-function updateCpaEventField(i, f, v) { state.fd.cpaEvents[i][f]=v; if(['arrestTime','cprStart','roscTime'].includes(f)) calcFlowTimes(i); updateState(); }
-function toggleCpaField(i, f) { state.fd.cpaEvents[i][f]=!state.fd.cpaEvents[i][f]; renderCpaEvents(); updateState(); }
-function setCpaEventNow(i, f) { const n=new Date(); state.fd.cpaEvents[i][f]=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`; renderCpaEvents(); updateState(); }
-function openCpaRhythmDial(i) { openDial('波形', [{options:['Asystole','PEA','VF','pulseless VT'].map(r=>({label:r,value:r})), selected:state.fd.cpaEvents[i].rhythm}], vals=>{ state.fd.cpaEvents[i].rhythm=vals[0]; renderCpaEvents(); updateState(); }); }
-function toggleCpaIntubation(i) { state.fd.cpaEvents[i].intubation=event.target.checked; renderCpaEvents(); updateState(); }
-function addAdrenalineTime(i) {
-  let t; if(state.fd.cpaEvents[i].adrenalineTimes.length===0){ const n=new Date(); t=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`; }
-  else { t=addMinutesToTime(state.fd.cpaEvents[i].adrenalineTimes.slice(-1)[0], 4); }
-  state.fd.cpaEvents[i].adrenalineTimes.push(t); renderAdrenalineTimes(i); updateState();
-}
-function addMinutesToTime(ts, m) { let [h, mn]=ts.split(':').map(Number); let tot=(h*60+mn+m)%1440; return `${String(Math.floor(tot/60)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`; }
-function renderAdrenalineTimes(i) {
-  const c = $(`#adrenaline_times_${i}`); if(!c) return; c.innerHTML = '';
-  state.fd.cpaEvents[i].adrenalineTimes.forEach((t, ai) => {
-    const r = document.createElement('div'); r.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:4px';
-    r.innerHTML = `<span style="font-size:12px;min-width:60px">${ai+1}回目</span><div class="vital-item" style="border:1px solid var(--line);border-radius:10px;padding:8px;flex:1;text-align:center" onclick="openAdrTimeDial(${i},${ai})">${t}</div><button class="btn small ghost" style="width:auto" onclick="state.fd.cpaEvents[${i}].adrenalineTimes.splice(${ai},1);renderAdrenalineTimes(${i});updateState()">削除</button>`;
-    c.appendChild(r);
-  });
-}
-function openAdrTimeDial(i, ai) {
-  let [h, m] = state.fd.cpaEvents[i].adrenalineTimes[ai].split(':').map(Number);
-  openDial('時刻', [{options:genRange(0,23,1).map(x=>({label:String(x).padStart(2,'0'),value:x})), selected:h, unit:':'},{options:genRange(0,59,1).map(x=>({label:String(x).padStart(2,'0'),value:x})), selected:m}], vals=>{
-    state.fd.cpaEvents[i].adrenalineTimes[ai]=`${String(vals[0]).padStart(2,'0')}:${String(vals[1]).padStart(2,'0')}`; renderAdrenalineTimes(i); updateState();
-  });
-}
-function calcFlowTimes(i) {
-  const ev = state.fd.cpaEvents[i]; const parse = ts => { if(!ts) return null; let [h,m]=ts.split(':').map(Number); return h*60+m; };
-  const a = parse(ev.arrestTime), c = parse(ev.cprStart), r = parse(ev.roscTime);
-  if(i===0){ if(a!==null && c!==null) $(`#no_flow_time_${i}`).textContent = (c-a >= 0 ? c-a : 1440+c-a) + ' 分'; if(c!==null && r!==null) $(`#low_flow_time_${i}`).textContent = (r-c >= 0 ? r-c : 1440+r-c) + ' 分'; }
-  else { if(a!==null && r!==null) $(`#low_flow_time_${i}`).textContent = (r-a >= 0 ? r-a : 1440+r-a) + ' 分'; }
+function updateCpaEventField(idx, field, value) {
+  state.fd.cpaEvents[idx][field] = value;
+  if(field === 'arrestTime' || field === 'cprStart' || field === 'roscTime') calcFlowTimes(idx);
+  updateState();
 }
 
-function openPupilDial(s) { openDial(`瞳孔径 ${s}`, [{options:Array.from({length:17},(_,i)=>(1+i*0.5)).map(x=>({label:String(x),value:x})), selected:state.fd.stroke[`pupil${s}`], unit:'mm'}], vals=>{ state.fd.stroke[`pupil${s}`]=vals[0]; $(`#pupil${s}_display`).textContent=vals[0]; updateState(); }); }
-function openMmtDial(l) { openDial('MMT', [{options:genRange(0,5,1), selected:state.fd.stroke.mmt[l]}], vals=>{ state.fd.stroke.mmt[l]=vals[0]; $(`#mmt_${l}_display`).textContent=vals[0]; updateState(); }); }
+function toggleCpaField(idx, field) {
+  state.fd.cpaEvents[idx][field] = !state.fd.cpaEvents[idx][field];
+  renderCpaEvents();
+  updateState();
+}
 
-const NIHSS_ITEMS = [{id:'1a', label:'1a 意識水準', hint:'0:覚醒 1:軽度 2:強い刺激 3:反応なし', max:3},{id:'1b', label:'1b 質問', hint:'0:両方正解 1:1つ正解 2:不正解', max:2},{id:'1c', label:'1c 従命', hint:'0:両方正解 1:1つ正解 2:不正解', max:2},{id:'2', label:'2 注視', hint:'0:正常 1:部分 2:完全', max:2},{id:'3', label:'3 視野', hint:'0:正常 1:部分 2:完全 3:両側', max:3},{id:'4', label:'4 顔面', hint:'0:なし 1:軽度 2:部分 3:完全', max:3},{id:'5a', label:'5a 上肢 右', hint:'0:保持 1-4:落下', max:4},{id:'5b', label:'5b 上肢 左', hint:'0:保持 1-4:落下', max:4},{id:'6a', label:'6a 下肢 右', hint:'0:保持 1-4:落下', max:4},{id:'6b', label:'6b 下肢 左', hint:'0:保持 1-4:落下', max:4},{id:'7', label:'7 失調', hint:'0:なし 1:1肢 2:2肢', max:2},{id:'8', label:'8 感覚', hint:'0:正常 1:軽度 2:重度', max:2},{id:'9', label:'9 言語', hint:'0:正常 1:軽度 2:重度 3:全失語', max:3},{id:'10', label:'10 構音', hint:'0:正常 1:軽度 2:重度', max:2},{id:'11', label:'11 注意', hint:'0:なし 1:軽度 2:重度', max:2}];
+function setCpaEventNow(idx, field) {
+  const now = new Date();
+  state.fd.cpaEvents[idx][field] = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  renderCpaEvents();
+  updateState();
+}
+
+function openCpaRhythmDial(idx) {
+  const rhythms = ['Asystole', 'PEA', 'VF', 'pulseless VT'];
+  const current = state.fd.cpaEvents[idx].rhythm;
+  const options = rhythms.map(r => ({label: r, value: r}));
+  openDial('初期波形', [{options, selected: current}], vals => {
+    state.fd.cpaEvents[idx].rhythm = vals[0];
+    renderCpaEvents();
+    updateState();
+  });
+}
+
+function toggleCpaIntubation(idx) {
+  const checked = event.target.checked;
+  state.fd.cpaEvents[idx].intubation = checked;
+  $(`#cpa_intubation_time_area_${idx}`).style.display = checked ? 'block' : 'none';
+  updateState();
+}
+
+function toggleCpaPericardio(idx) {
+  const checked = event.target.checked;
+  state.fd.cpaEvents[idx].pericardio = checked;
+  $(`#cpa_pericardio_time_area_${idx}`).style.display = checked ? 'block' : 'none';
+  updateState();
+}
+
+function addAdrenalineTime(idx) {
+  if(!state.fd.cpaEvents[idx].adrenalineTimes) state.fd.cpaEvents[idx].adrenalineTimes = [];
+  let newTime;
+  if(state.fd.cpaEvents[idx].adrenalineTimes.length === 0) {
+    const now = new Date();
+    newTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  } else {
+    newTime = addMinutesToTime(state.fd.cpaEvents[idx].adrenalineTimes[state.fd.cpaEvents[idx].adrenalineTimes.length - 1], 4);
+  }
+  state.fd.cpaEvents[idx].adrenalineTimes.push(newTime);
+  renderAdrenalineTimes(idx);
+  updateState();
+}
+
+function addMinutesToTime(timeStr, minutes) {
+  const [h, m] = timeStr.split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+}
+
+function removeAdrenalineTime(idx, adrIdx) {
+  state.fd.cpaEvents[idx].adrenalineTimes.splice(adrIdx, 1);
+  renderAdrenalineTimes(idx);
+  updateState();
+}
+
+function renderAdrenalineTimes(idx) {
+  const container = $(`#adrenaline_times_${idx}`);
+  if(!container) return;
+  container.innerHTML = '';
+  (state.fd.cpaEvents[idx].adrenalineTimes || []).forEach((time, adrIdx) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px';
+    row.innerHTML = `<span style="font-weight:500;min-width:60px">${adrIdx + 1}回目</span>
+      <div class="vital-item" style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;flex:1;text-align:center" onclick="openAdrenalineTimeDial(${idx}, ${adrIdx})">
+        <span style="font-size:18px;font-weight:600;color:var(--brand)">${time}</span>
+      </div>
+      <button class="btn small ghost" style="padding:8px 12px;width:auto" onclick="removeAdrenalineTime(${idx}, ${adrIdx})">削除</button>`;
+    container.appendChild(row);
+  });
+}
+
+function openAdrenalineTimeDial(idx, adrIdx) {
+  const current = state.fd.cpaEvents[idx].adrenalineTimes[adrIdx] || '00:00';
+  const [h, m] = current.split(':').map(Number);
+  const hours = []; for(let i=0; i<24; i++) hours.push({label: String(i).padStart(2,'0'), value: i});
+  const minutes = []; for(let i=0; i<60; i++) minutes.push({label: String(i).padStart(2,'0'), value: i});
+  openDial(`アドレナリン ${adrIdx+1}回目`, [{options:hours,selected:h,unit:':'},{options:minutes,selected:m}], vals => {
+    state.fd.cpaEvents[idx].adrenalineTimes[adrIdx] = `${String(vals[0]).padStart(2,'0')}:${String(vals[1]).padStart(2,'0')}`;
+    renderAdrenalineTimes(idx);
+    updateState();
+  });
+}
+
+function calcFlowTimes(idx) {
+  const ev = state.fd.cpaEvents[idx];
+  if(idx === 0) {
+    if(ev.arrestTime && ev.cprStart) {
+      const diff = calcTimeDiffMinutes(ev.arrestTime, ev.cprStart);
+      $(`#no_flow_time_${idx}`).textContent = diff >= 0 ? `${diff} 分` : '-- 分';
+    }
+    if(ev.cprStart && ev.roscTime) {
+      const diff = calcTimeDiffMinutes(ev.cprStart, ev.roscTime);
+      $(`#low_flow_time_${idx}`).textContent = diff >= 0 ? `${diff} 分` : '-- 分';
+    }
+  } else if(ev.arrestTime && ev.roscTime) {
+    const diff = calcTimeDiffMinutes(ev.arrestTime, ev.roscTime);
+    $(`#low_flow_time_${idx}`).textContent = diff >= 0 ? `${diff} 分` : '-- 分';
+  }
+}
+
+function calcTimeDiffMinutes(startTime, endTime) {
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  return diff < 0 ? diff + 1440 : diff;
+}
+
+function openPupilDial(side) {
+  const current = state.fd.stroke?.[`pupil${side}`] || 3;
+  const options = []; for(let i=1; i<=9; i+=0.5) options.push({label: i.toString(), value: i});
+  openDial(`瞳孔径 ${side==='L'?'左':'右'}`, [{options, selected: current, unit: 'mm'}], vals => {
+    if(!state.fd.stroke) state.fd.stroke = {};
+    state.fd.stroke[`pupil${side}`] = vals[0];
+    $(`#pupil${side}_display`).textContent = vals[0];
+    updateState();
+  });
+}
+
+function openMmtDial(limb) {
+  const labels = {ru:'右上肢', lu:'左上肢', rl:'右下肢', ll:'左下肢'};
+  const current = state.fd.stroke?.mmt?.[limb] ?? 5;
+  const options = []; for(let i=0; i<=5; i++) options.push({label: i.toString(), value: i});
+  openDial(`MMT ${labels[limb]}`, [{options, selected: current}], vals => {
+    if(!state.fd.stroke) state.fd.stroke = {mmt:{}};
+    if(!state.fd.stroke.mmt) state.fd.stroke.mmt = {};
+    state.fd.stroke.mmt[limb] = vals[0];
+    $(`#mmt_${limb}_display`).textContent = vals[0];
+    updateState();
+  });
+}
+
+const NIHSS_ITEMS = [
+  {id:'1a', label:'1a 意識水準', hint:'0:覚醒 1:軽度鈍麻 2:強い刺激で開眼 3:反応なし', max:3},
+  {id:'1b', label:'1b 質問（年齢/月）', hint:'0:両方正解 1:1つ正解 2:両方不正解', max:2},
+  {id:'1c', label:'1c 従命（開閉眼/握手）', hint:'0:両方正解 1:1つ正解 2:両方不正解', max:2},
+  {id:'2', label:'2 注視', hint:'0:正常 1:部分的注視麻痺 2:完全注視麻痺', max:2},
+  {id:'3', label:'3 視野', hint:'0:正常 1:部分的半盲 2:完全半盲 3:両側性', max:3},
+  {id:'4', label:'4 顔面麻痺', hint:'0:なし 1:軽度 2:部分的 3:完全', max:3},
+  {id:'5a', label:'5a 上肢運動 右', hint:'0:保持 1-4:落下程度', max:4},
+  {id:'5b', label:'5b 上肢運動 左', hint:'0:保持 1-4:落下程度', max:4},
+  {id:'6a', label:'6a 下肢運動 右', hint:'0:保持 1-4:落下程度', max:4},
+  {id:'6b', label:'6b 下肢運動 左', hint:'0:保持 1-4:落下程度', max:4},
+  {id:'7', label:'7 運動失調', hint:'0:なし 1:1肢 2:2肢', max:2},
+  {id:'8', label:'8 感覚', hint:'0:正常 1:軽度低下 2:重度低下', max:2},
+  {id:'9', label:'9 言語', hint:'0:正常 1:軽度 2:重度 3:全失語', max:3},
+  {id:'10', label:'10 構音障害', hint:'0:正常 1:軽度 2:重度', max:2},
+  {id:'11', label:'11 消去/注意障害', hint:'0:なし 1:軽度 2:重度', max:2}
+];
+
 function renderNihss() {
-  const c = $('#nihss_area'); if(!c) return; c.innerHTML = '';
-  NIHSS_ITEMS.forEach(it => {
-    const row = document.createElement('div'); row.style.cssText='margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e5e7eb';
-    const val = state.fd.stroke.nihss[it.id]||0;
-    row.innerHTML = `<div style="font-weight:600;font-size:13px">${it.label}</div><div style="display:flex;gap:6px;margin-top:6px">${Array.from({length:it.max+1},(_,i)=>`<button class="nihss-btn ${val===i?'active':''}" onclick="setNihss('${it.id}',${i})">${i}</button>`).join('')}</div>`;
-    c.appendChild(row);
-  }); calcNihssSum();
+  const container = $('#nihss_area'); if(!container) return; container.innerHTML = '';
+  NIHSS_ITEMS.forEach(item => {
+    const row = document.createElement('div'); row.style.cssText = 'margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e5e7eb';
+    const val = state.fd.stroke?.nihss?.[item.id] ?? 0;
+    row.innerHTML = `<div style="font-weight:600;font-size:13px">${item.label}</div><div style="font-size:11px;color:#6b7280;margin:2px 0 6px">${item.hint}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${Array.from({length: item.max+1}, (_, i) => `<button class="nihss-btn ${val===i?'active':''}" data-item="${item.id}" data-val="${i}" onclick="setNihss('${item.id}',${i})">${i}</button>`).join('')}</div>`;
+    container.appendChild(row);
+  });
+  calcNihssSum();
 }
-function setNihss(id,v) { state.fd.stroke.nihss[id]=v; renderNihss(); updateState(); }
-function calcNihssSum() { let s = Object.values(state.fd.stroke.nihss).reduce((a,b)=>a+b,0); $('#nihss_sum').textContent=s+'点'; }
+
+function setNihss(itemId, val) {
+  if(!state.fd.stroke) state.fd.stroke = {nihss:{}};
+  if(!state.fd.stroke.nihss) state.fd.stroke.nihss = {};
+  state.fd.stroke.nihss[itemId] = val;
+  $$(`[data-item="${itemId}"]`).forEach(btn => btn.classList.toggle('active', parseInt(btn.dataset.val) === val));
+  calcNihssSum(); updateState();
+}
+
+function calcNihssSum() {
+  const nihss = state.fd.stroke?.nihss || {};
+  let sum = 0; NIHSS_ITEMS.forEach(item => sum += nihss[item.id] || 0);
+  if($('#nihss_sum')) $('#nihss_sum').textContent = `${sum}点`;
+  return sum;
+}
 
 function addEmsVital() {
-  const n=new Date(); const t=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
-  let v = state.ems.vitals.length ? {...state.ems.vitals.slice(-1)[0], time:t} : {time:t,sbp:120,dbp:80,hr:80,rr:16,spo2:98,bt:36.5,gcs:{e:4,v:5,m:6},jcs:'0'};
-  state.ems.vitals.push(v); renderEmsVitals(); updateState();
-}
-function addFdVital() {
-  const n=new Date(); const t=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`;
-  let v = state.fd.vitals.length ? {...state.fd.vitals.slice(-1)[0], time:t} : {time:t,sbp:120,dbp:80,hr:80,rr:16,spo2:98,bt:36.5,gcs:{e:4,v:5,m:6},jcs:'0'};
-  state.fd.vitals.push(v); renderFdVitals(); updateState();
-}
-function removeVital(t,i) { if(confirm('削除?')){ state[t].vitals.splice(i,1); if(t==='ems')renderEmsVitals(); else renderFdVitals(); updateState(); } }
-function renderEmsVitals() { const c=$('#ems_vitals_container'); c.innerHTML=''; state.ems.vitals.forEach((v,i)=>c.appendChild(createVitalCard('ems',i,v))); }
-function renderFdVitals() { const c=$('#fd_vitals_container'); c.innerHTML=''; state.fd.vitals.forEach((v,i)=>c.appendChild(createVitalCard('fd',i,v))); }
-function createVitalCard(t,idx,v) {
-  const c = document.createElement('div'); c.className='vital-card';
-  const gs = v.gcs.v==='T'?(v.gcs.e+v.gcs.m)+'T':(v.gcs.e+parseInt(v.gcs.v)+v.gcs.m);
-  c.innerHTML = `<div class="vital-header"><input type="time" value="${v.time}" onchange="state.${t}.vitals[${idx}].time=this.value;updateState()"><button class="vital-del" onclick="removeVital('${t}',${idx})">削除</button></div>
-    <div class="vital-grid">
-      <div class="vital-item" onclick="openVitalDial('${t}',${idx},'bp')"><div class="vital-label">BP</div><div class="vital-value">${v.sbp}/${v.dbp}</div></div>
-      <div class="vital-item" onclick="openVitalDial('${t}',${idx},'hr')"><div class="vital-label">HR</div><div class="vital-value">${v.hr}</div></div>
-      <div class="vital-item" onclick="openVitalDial('${t}',${idx},'rr')"><div class="vital-label">RR</div><div class="vital-value">${v.rr}</div></div>
-      <div class="vital-item" onclick="openVitalDial('${t}',${idx},'spo2')"><div class="vital-label">SpO2</div><div class="vital-value">${v.spo2||'--'}</div></div>
-      <div class="vital-item" onclick="openVitalDial('${t}',${idx},'bt')"><div class="vital-label">BT</div><div class="vital-value">${v.bt}</div></div>
-      <div class="vital-item" onclick="openVitalDial('${t}',${idx},'jcs')"><div class="vital-label">JCS</div><div class="vital-value">${v.jcs}</div></div>
-      <div class="vital-gcs"><div class="gcs-part" onclick="openVitalDial('${t}',${idx},'gcs_e')"><span class="lbl">E</span><span class="val">${v.gcs.e}</span></div><div class="gcs-part" onclick="openVitalDial('${t}',${idx},'gcs_v')"><span class="lbl">V</span><span class="val">${v.gcs.v}</span></div><div class="gcs-part" onclick="openVitalDial('${t}',${idx},'gcs_m')"><span class="lbl">M</span><span class="val">${v.gcs.m}</span></div><div class="gcs-sum">${gs}</div></div>
-    </div>`; return c;
+  const now = new Date(); const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  let newVital;
+  if(state.ems.vitals.length > 0) {
+    const prev = state.ems.vitals[state.ems.vitals.length-1];
+    newVital = {time, sbp:prev.sbp, dbp:prev.dbp, hr:prev.hr, rr:prev.rr, spo2:prev.spo2, bt:prev.bt, gcs:{e:prev.gcs.e,v:prev.gcs.v,m:prev.gcs.m}, jcs:prev.jcs};
+  } else {
+    newVital = {time, sbp:120, dbp:80, hr:80, rr:16, spo2:98, bt:36.5, gcs:{e:4,v:5,m:6}, jcs:'0'};
+  }
+  state.ems.vitals.push(newVital); renderEmsVitals(); updateState();
 }
 
-function setNow(id) { const n=new Date(); $(`#${id}`).value=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`; updateState(); }
-function mkChip(l,m,p) {
-  const e=document.createElement('span'); e.className='chip'; e.textContent=l; e.dataset.state=state[p].chips[l]||'';
-  e.onclick=()=>{ let c=e.dataset.state||'',n=''; if(m==='normal')n=(c==='on'?'':'on'); else n=(c===''?'+':c==='+'?'-':''); e.dataset.state=n; if(n)state[p].chips[l]=n; else delete state[p].chips[l]; updateState(); }; return e;
+function addFdVital() {
+  const now = new Date(); const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  let newVital;
+  if(state.fd.vitals.length > 0) {
+    const prev = state.fd.vitals[state.fd.vitals.length-1];
+    newVital = {time, sbp:prev.sbp, dbp:prev.dbp, hr:prev.hr, rr:prev.rr, spo2:prev.spo2, bt:prev.bt, gcs:{e:prev.gcs.e,v:prev.gcs.v,m:prev.gcs.m}, jcs:prev.jcs};
+  } else {
+    newVital = {time, sbp:120, dbp:80, hr:80, rr:16, spo2:98, bt:36.5, gcs:{e:4,v:5,m:6}, jcs:'0'};
+  }
+  state.fd.vitals.push(newVital); renderFdVitals(); updateState();
 }
-function mountChips(id,def,p) { const b=$(id); if(!b) return; b.innerHTML=''; if(Array.isArray(def)) def.forEach(x=>b.appendChild(mkChip(x,'abn',p))); else { (def.normal||[]).forEach(x=>b.appendChild(mkChip(x,'normal',p))); (def.abn||[]).forEach(x=>b.appendChild(mkChip(x,'abn',p))); } }
-function renderProcedureChips(id,its,obj) {
-  const c=$(id); c.innerHTML=''; its.forEach(it=>{
-    const chip=document.createElement('div'); chip.className='chip'; chip.textContent=it; if(obj[it]) chip.dataset.state='proc';
-    chip.onclick=()=>{ obj[it]=!obj[it]; chip.dataset.state=obj[it]?'proc':''; if(id==='ems_procedures'&&it==='酸素投与')$('#ems_o2_amount').style.display=obj[it]?'block':'none'; updateState(); }; c.appendChild(chip);
+
+function removeVital(type, idx) {
+  if(confirm('削除しますか？')) {
+    state[type].vitals.splice(idx, 1);
+    if(type === 'ems') renderEmsVitals(); else renderFdVitals();
+    updateState();
+  }
+}
+
+function renderEmsVitals() {
+  const c = $('#ems_vitals_container'); c.innerHTML = '';
+  state.ems.vitals.forEach((v, i) => c.appendChild(createVitalCard('ems', i, v)));
+}
+
+function renderFdVitals() {
+  const c = $('#fd_vitals_container'); c.innerHTML = '';
+  state.fd.vitals.forEach((v, i) => c.appendChild(createVitalCard('fd', i, v)));
+}
+
+// createVitalCard内 SpO2表記を半角に修正
+function createVitalCard(type, idx, v) {
+  const card = document.createElement('div'); card.className = 'vital-card';
+  const gcsSum = v.gcs.v === 'T' ? `${v.gcs.e + v.gcs.m}T` : (v.gcs.e + parseInt(v.gcs.v) + v.gcs.m);
+  const spo2Display = v.spo2 === 0 ? '--' : v.spo2;
+  card.innerHTML = `
+    <div class="vital-header"><div class="vital-time"><input type="time" value="${v.time}" onchange="state.${type}.vitals[${idx}].time=this.value;updateState()"></div>
+      <button class="vital-del" onclick="removeVital('${type}',${idx})">削除</button></div>
+    <div class="vital-grid">
+      <div class="vital-item" onclick="openVitalDial('${type}',${idx},'bp')"><div class="vital-label">BP</div><div class="vital-value">${v.sbp}/${v.dbp}</div><div class="vital-unit">mmHg</div></div>
+      <div class="vital-item" onclick="openVitalDial('${type}',${idx},'hr')"><div class="vital-label">HR</div><div class="vital-value">${v.hr}</div><div class="vital-unit">bpm</div></div>
+      <div class="vital-item" onclick="openVitalDial('${type}',${idx},'rr')"><div class="vital-label">RR</div><div class="vital-value">${v.rr}</div><div class="vital-unit">/min</div></div>
+      <div class="vital-item" onclick="openVitalDial('${type}',${idx},'spo2')"><div class="vital-label">SpO2</div><div class="vital-value">${spo2Display}</div><div class="vital-unit">%</div></div>
+      <div class="vital-item" onclick="openVitalDial('${type}',${idx},'bt')"><div class="vital-label">BT</div><div class="vital-value">${v.bt}</div><div class="vital-unit">℃</div></div>
+      <div class="vital-item" onclick="openVitalDial('${type}',${idx},'jcs')"><div class="vital-label">JCS</div><div class="vital-value">${v.jcs}</div></div>
+      <div class="vital-gcs"><div class="gcs-part" onclick="openVitalDial('${type}',${idx},'gcs_e')"><span class="lbl">E</span><span class="val">${v.gcs.e}</span></div>
+        <div class="gcs-part" onclick="openVitalDial('${type}',${idx},'gcs_v')"><span class="lbl">V</span><span class="val">${v.gcs.v}</span></div>
+        <div class="gcs-part" onclick="openVitalDial('${type}',${idx},'gcs_m')"><span class="lbl">M</span><span class="val">${v.gcs.m}</span></div><div class="gcs-sum">${gcsSum}</div></div>
+    </div>`; return card;
+}
+
+function setNow(id) {
+  const now = new Date(); $(`#${id}`).value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  updateState();
+}
+
+function mkChip(label, mode, prefix) {
+  const el = document.createElement('span'); el.className = 'chip'; el.textContent = label; el.dataset.state = state[prefix].chips[label] || '';
+  el.onclick = () => {
+    const cur = el.dataset.state || ''; let nxt = '';
+    if(mode === 'normal') nxt = cur === 'on' ? '' : 'on';
+    else nxt = cur === '' ? '+' : cur === '+' ? '-' : '';
+    el.dataset.state = nxt; if(nxt) state[prefix].chips[label] = nxt; else delete state[prefix].chips[label];
+    updateState();
+  }; return el;
+}
+
+function mountChips(id, def, prefix) {
+  const box = $(id); if(!box) return; box.innerHTML = '';
+  if(Array.isArray(def)) def.forEach(x => box.appendChild(mkChip(x, 'abn', prefix)));
+  else { (def.normal || []).forEach(x => box.appendChild(mkChip(x, 'normal', prefix))); (def.abn || []).forEach(x => box.appendChild(mkChip(x, 'abn', prefix))); }
+}
+
+function renderProcedureChips(containerId, items, stateObj) {
+  const c = $(`#${containerId}`); c.innerHTML = '';
+  items.forEach(item => {
+    const chip = document.createElement('div'); chip.className = 'chip'; chip.textContent = item;
+    if(stateObj[item]) chip.dataset.state = 'proc';
+    chip.onclick = () => {
+      stateObj[item] = !stateObj[item]; chip.dataset.state = stateObj[item] ? 'proc' : '';
+      if(containerId === 'ems_procedures' && item === '酸素投与') $('#ems_o2_amount').style.display = stateObj[item] ? 'block' : 'none';
+      updateState();
+    }; c.appendChild(chip);
   });
 }
-function setupExamTabs(p) {
-  $$(`#${p}_examTabs .exam-tab`).forEach(tab=>{
-    tab.onclick=()=>{ $$(`#${p}_examTabs .exam-tab`).forEach(t=>t.classList.remove('active')); tab.classList.add('active'); state[p].exam_tab=tab.dataset.exam; const card=tab.closest('.card'); card.querySelectorAll('.exam-pane').forEach(pn=>pn.classList.remove('active')); card.querySelector(`.exam-pane[data-pane="${tab.dataset.exam}"]`).classList.add('active'); if(tab.dataset.exam==='cpa') setCpaVitalDefaults(); updateState(); };
+
+function setupExamTabs(prefix) {
+  $$(`#${prefix}_examTabs .exam-tab`).forEach(tab => {
+    tab.onclick = () => {
+      $$(`#${prefix}_examTabs .exam-tab`).forEach(t => t.classList.remove('active'));
+      tab.classList.add('active'); const type = tab.dataset.exam; state[prefix].exam_tab = type;
+      const card = tab.closest('.card'); card.querySelectorAll('.exam-pane').forEach(p => p.classList.remove('active'));
+      card.querySelector(`.exam-pane[data-pane="${type}"]`)?.classList.add('active');
+      if(type === 'cpa') { setCpaVitalDefaults(); if(prefix === 'fd' && state.fd.cpaEvents.length === 0) addCpaEvent(); }
+      updateState();
+    };
   });
 }
-function setCpaVitalDefaults() { if(!confirm('CPAモード：バイタルを初期化しますか？')) return; [state.ems, state.fd].forEach(s=>s.vitals.forEach(v=>{ v.sbp=0;v.dbp=0;v.hr=0;v.rr=0;v.spo2=0;v.jcs='300';v.gcs={e:1,v:1,m:1}; })); renderEmsVitals(); renderFdVitals(); updateState(); }
+
+function setCpaVitalDefaults() {
+  if(!confirm('CPAモードに切り替えます。バイタルサインをCPA初期値に設定しますか？')) return;
+  [state.ems, state.fd].forEach(s => s.vitals.forEach(v => { v.sbp=0; v.dbp=0; v.hr=0; v.rr=0; v.spo2=0; v.jcs='300'; v.gcs={e:1,v:1,m:1}; }));
+  renderEmsVitals(); renderFdVitals(); updateState();
+}
 
 function bindMemos() {
-  const b=(id,o,k)=>{ const e=$(id); if(e){ e.value=o[k]||''; e.oninput=()=>{o[k]=e.value;updateState();}; } };
-  ['head','resp','card','abd','limb','neuro'].forEach(k=>b(`#memo-ems-gen-${k}`,state.ems.memos.general,k));
-  ['head','neck','chest','abd','pelvis','limb'].forEach(k=>b(`#memo-ems-tra-${k}`,state.ems.memos.trauma,k));
-  b('#memo-ems-cpa',state.ems.memos.cpa,'memo'); b('#memo-ems-str',state.ems.memos.stroke,'memo');
-  ['head','resp','card','abd','limb','neuro'].forEach(k=>b(`#memo-fd-gen-${k}`,state.fd.memos.general,k));
-  ['head','neck','chest','abd','pelvis','limb'].forEach(k=>b(`#memo-fd-tra-${k}`,state.fd.memos.trauma,k));
-  ['cn','eye','motor','reflex','higher'].forEach(k=> { const el = $(`#memo-fd-str-${k}`); if(el) { if(!state.fd.memos.stroke) state.fd.memos.stroke = {}; el.value = state.fd.memos.stroke[k] || ''; el.oninput = () => { state.fd.memos.stroke[k] = el.value; updateState(); }; } });
-  ['body','head','trunk'].forEach(k=>b(`#memo-fd-cpa-${k}`,state.fd.memos.cpa,k));
+  const bind = (id, obj, key) => { const el = $(id); if(el) { el.value = obj[key] || ''; el.oninput = () => { obj[key] = el.value; updateState(); }; } };
+  ['head','resp','card','abd','limb','neuro'].forEach(k => bind(`#memo-ems-gen-${k}`, state.ems.memos.general, k));
+  ['head','neck','chest','abd','pelvis','limb'].forEach(k => bind(`#memo-ems-tra-${k}`, state.ems.memos.trauma, k));
+  if(!state.ems.memos.cpa) state.ems.memos.cpa = {memo:''}; bind('#memo-ems-cpa', state.ems.memos.cpa, 'memo');
+  if(!state.ems.memos.stroke) state.ems.memos.stroke = {memo:''}; bind('#memo-ems-str', state.ems.memos.stroke, 'memo');
+  ['head','resp','card','abd','limb','neuro'].forEach(k => bind(`#memo-fd-gen-${k}`, state.fd.memos.general, k));
+  ['head','neck','chest','abd','pelvis','limb'].forEach(k => bind(`#memo-fd-tra-${k}`, state.fd.memos.trauma, k));
+  ['cn','eye','motor','reflex','higher'].forEach(k => {
+    const el = $(`#memo-fd-str-${k}`);
+    if(el) { if(!state.fd.memos.stroke) state.fd.memos.stroke = {}; el.value = state.fd.memos.stroke[k] || ''; el.oninput = () => { state.fd.memos.stroke[k] = el.value; updateState(); }; }
+  });
+  ['body','head','trunk'].forEach(k => bind(`#memo-fd-cpa-${k}`, state.fd.memos.cpa, k));
 }
 
 const ABG_ITEMS = [{item:'pH',unit:'',normal:'7.40'},{item:'pCO2',unit:'mmHg',normal:'40'},{item:'pO2',unit:'mmHg',normal:'95'},{item:'HCO3-',unit:'mmol/L',normal:'24'},{item:'BE',unit:'mEq/L',normal:'0'},{item:'Lac',unit:'mmol/L',normal:'1.0'},{item:'Na',unit:'mEq/L',normal:'140'},{item:'Cr',unit:'mg/dL',normal:'0.8'}];
-const ABG_DIAL = {'pH':{min:6.8,max:7.8,s:0.01,d:2},'pCO2':{min:10,max:150,s:1,d:0},'pO2':{min:10,max:500,s:1,d:0},'HCO3-':{min:0,max:50,s:1,d:0},'BE':{min:-30,max:30,s:1,d:0},'Lac':{min:0,max:30,s:0.1,d:1},'Na':{min:100,max:180,s:1,d:0},'Cr':{min:0.1,max:15,s:0.1,d:1}};
-function toggleAbg(){ state.fd.abg_type=$('#fd_abg_type').value; $('#abg_area').style.display=state.fd.abg_type?'block':'none'; updateState(); }
-function addAbgSet(){ ABG_ITEMS.forEach(it=>{ if(!state.fd.abg_data.some(x=>x.item===it.item)) state.fd.abg_data.push({item:it.item, unit:it.unit, val:it.normal}); }); renderAbgPills(); updateState(); }
-function openAbgDial(i) {
-  const r=state.fd.abg_data[i], c=ABG_DIAL[r.item]; if(!c) return;
-  let opts=[]; for(let v=c.min;v<=c.max;v+=c.s) opts.push({label:v.toFixed(c.d),value:v.toFixed(c.d)});
-  openDial(r.item,[{options:opts,selected:parseFloat(r.val).toFixed(c.d),unit:r.unit}],v=>{state.fd.abg_data[i].val=v[0];renderAbgPills();updateState();});
+const ABG_DIAL_CONFIG = {'pH': {min:6.8,max:7.8,step:0.01,decimals:2},'pCO2': {min:10,max:150,step:1,decimals:0},'pO2': {min:10,max:500,step:1,decimals:0},'HCO3-': {min:0,max:50,step:1,decimals:0},'BE': {min:-30,max:30,step:1,decimals:0},'Lac': {min:0,max:30,step:0.1,decimals:1},'Na': {min:100,max:180,step:1,decimals:0},'Cr': {min:0.1,max:15,step:0.1,decimals:1}};
+
+function toggleAbg() { state.fd.abg_type = $('#fd_abg_type').value; $('#abg_area').style.display = state.fd.abg_type ? 'block' : 'none'; updateState(); }
+function addAbgSet() { ABG_ITEMS.forEach(it => { if(!state.fd.abg_data.some(x => x.item === it.item)) state.fd.abg_data.push({item:it.item, unit:it.unit, val:it.normal}); }); renderAbgPills(); updateState(); }
+function clearAbg() { if(confirm('クリアしますか？')) { state.fd.abg_data = []; renderAbgPills(); updateState(); } }
+function openAbgDial(idx) {
+  const rec = state.fd.abg_data[idx]; const config = ABG_DIAL_CONFIG[rec.item]; if(!config) return;
+  const options = []; for(let v=config.min; v<=config.max; v+=config.step) { const val = v.toFixed(config.decimals); options.push({label:val,value:val}); }
+  openDial(`${rec.item}`, [{options, selected: parseFloat(rec.val).toFixed(config.decimals), unit: rec.unit}], vals => { rec.val = vals[0]; renderAbgPills(); updateState(); });
+}
+function openAbgManualInput(idx) {
+  const rec = state.fd.abg_data[idx]; const newVal = prompt(`${rec.item} の値を入力`, rec.val);
+  if(newVal !== null && newVal.trim() !== '') { rec.val = newVal.trim(); renderAbgPills(); updateState(); }
 }
 function renderAbgPills() {
-  const c=$('#abg_pills'); c.innerHTML=''; state.fd.abg_data.forEach((r,i)=>{
-    const p=document.createElement('div'); p.className='labpill'; p.innerHTML=`<label>${r.item}</label><span style="color:var(--brand);font-weight:600" onclick="openAbgDial(${i})">${r.val}</span><span class="unit">${r.unit}</span><button onclick="state.fd.abg_data.splice(${i},1);renderAbgPills();updateState()">×</button>`; c.appendChild(p);
+  const c = $('#abg_pills'); c.innerHTML = '';
+  state.fd.abg_data.forEach((rec, i) => {
+    const pill = document.createElement('div'); pill.className = 'labpill'; pill.style.cursor = 'pointer';
+    pill.innerHTML = `<label>${rec.item}</label><span class="abg-val" style="min-width:50px;text-align:right;font-weight:600;color:var(--brand)">${rec.val}</span><span class="unit">${rec.unit}</span>
+      <button onclick="event.stopPropagation();state.fd.abg_data.splice(${i},1);renderAbgPills();updateState()">×</button>`;
+    const valSpan = pill.querySelector('.abg-val');
+    let timer = null; let isLong = false;
+    valSpan.addEventListener('touchstart', () => { isLong = false; timer = setTimeout(() => { isLong = true; openAbgManualInput(i); }, 500); });
+    valSpan.addEventListener('touchend', () => { clearTimeout(timer); if(!isLong) openAbgDial(i); });
+    valSpan.addEventListener('touchmove', () => clearTimeout(timer));
+    c.appendChild(pill);
   });
 }
-function toggleExam(t){ state.fd.exams[t]=$(`#exam_${t}`).checked; if(t==='bs')$('#exam_bs_area').style.display=state.fd.exams[t]?'block':'none'; else $(`#exam_${t}_txt`).style.display=state.fd.exams[t]?'block':'none'; updateState(); }
 
-function addProblem(){ const i=$('#new_problem'),t=i.value.trim(); if(t){state.problems.push(t);i.value='';renderProblems();updateState();} }
-function renderProblems(){ $('#problems').innerHTML=state.problems.map((p,i)=>`<div class="problem-item"><span>#${i+1} ${p}</span><button class="del-btn" onclick="state.problems.splice(${i},1);renderProblems();updateState()">削除</button></div>`).join(''); }
+function toggleExam(type) {
+  state.fd.exams[type] = $(`#exam_${type}`).checked;
+  if(type === 'bs') $('#exam_bs_area').style.display = state.fd.exams[type] ? 'block' : 'none';
+  else $(`#exam_${type}_txt`).style.display = state.fd.exams[type] ? 'block' : 'none';
+  updateState();
+}
+
+function addProblem() {
+  const input = $('#new_problem'); const text = input.value.trim();
+  if(text) { state.problems.push(text); input.value = ''; renderProblems(); updateState(); }
+}
+function renderProblems() {
+  const c = $('#problems');
+  c.innerHTML = state.problems.map((p, i) => `<div class="problem-item"><span>#${i+1} ${p}</span><button class="del-btn" onclick="state.problems.splice(${i},1);renderProblems();updateState()">削除</button></div>`).join('');
+}
 
 let selectedRegion = '鹿児島';
 function renderHospitalChips() {
-  const c=$('#destination_chips'); c.innerHTML='';
-  const tabs = document.createElement('div'); tabs.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line)';
-  Object.keys(state.hospitals).forEach(r=>{ const t=document.createElement('div'); t.style.cssText=`padding:6px 12px;border-radius:16px;font-size:13px;cursor:pointer;${selectedRegion===r?'background:var(--brand);color:#fff':'background:var(--chip)'}`; t.textContent=r; t.onclick=()=>{selectedRegion=r;renderHospitalChips();}; tabs.appendChild(t); });
-  c.appendChild(tabs);
-  const hBox = document.createElement('div'); hBox.style.cssText='display:flex;flex-wrap:wrap;gap:8px';
-  (state.hospitals[selectedRegion]||[]).forEach(h=>{ const ch=document.createElement('div'); ch.className='chip'+(state.destination.hospital===h?' active':''); ch.textContent=h; ch.onclick=()=>{ state.destination.hospital=(state.destination.hospital===h?'':h); if(state.destination.hospital) {$('#destination_custom').value=''; state.destination.custom='';} renderHospitalChips(); updateState(); }; hBox.appendChild(ch); });
-  c.appendChild(hBox); updateDestinationDisplay();
+  const container = $('#destination_chips'); container.innerHTML = '';
+  const tabs = document.createElement('div'); tabs.className = 'region-tabs';
+  tabs.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line)';
+  Object.keys(state.hospitals).forEach(r => {
+    const tab = document.createElement('div'); tab.className = 'region-tab';
+    tab.style.cssText = `padding:6px 12px;border-radius:16px;font-size:13px;cursor:pointer;${selectedRegion === r ? 'background:var(--brand);color:#fff' : 'background:var(--chip)'}`;
+    tab.textContent = r; tab.onclick = () => { selectedRegion = r; renderHospitalChips(); };
+    tabs.appendChild(tab);
+  }); container.appendChild(tabs);
+  const hContainer = document.createElement('div'); hContainer.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px';
+  (state.hospitals[selectedRegion] || []).forEach(h => {
+    const chip = document.createElement('div'); chip.className = 'chip' + (state.destination.hospital === h ? ' active' : '');
+    chip.textContent = h; chip.onclick = () => selectHospital(h);
+    hContainer.appendChild(chip);
+  }); container.appendChild(hContainer);
+  updateDestinationDisplay();
 }
-function updateDestinationDisplay() { const h = state.destination.custom || state.destination.hospital; $('#destination_display').style.display = h ? 'block' : 'none'; $('#destination_selected').textContent = h; }
+
+function selectHospital(name) {
+  if(state.destination.hospital === name) state.destination.hospital = '';
+  else { state.destination.hospital = name; state.destination.custom = ''; $('#destination_custom').value = ''; }
+  renderHospitalChips(); updateState();
+}
+
+function updateDestinationDisplay() {
+  const display = $('#destination_display'); const selected = $('#destination_selected');
+  const h = state.destination.custom || state.destination.hospital;
+  if(h) { display.style.display = 'block'; selected.textContent = h; } else display.style.display = 'none';
+}
 
 function updateState() {
-  const f=state.fd, e=state.ems;
-  state.request.type=$('#request_type').value; state.request.detail=$('#request_detail').value; state.request.time=$('#request_time').value;
-  state.patient={history:$('#patient_history').value, medication:$('#patient_medication').value, allergy:$('#patient_allergy').value, lastMeal:$('#last_meal_time').value, hospital:$('#patient_hospital').value};
-  state.heli={takeoff:$('#heli_takeoff').value, lz_landing:$('#heli_lz_landing').value, fd_contact:$('#fd_contact').value, turn_type:$('#turn_type').value, transport_takeoff:$('#transport_takeoff').value, hospital_arrival:$('#hospital_arrival').value};
-  e.aware=$('#ems_aware').value; e.arrival=$('#ems_arrival').value; e.contact=$('#ems_contact').value; e.lz=$('#ems_lz').value; e.o2_flow=$('#ems_o2_flow').value; e.procedures_detail=$('#ems_procedures_detail').value;
-  f.bs=$('#fd_bs').value; f.exam_detail=$('#fd_exam_detail').value; f.procedure_detail=$('#fd_procedure_detail').value; f.drug_detail=$('#fd_drug_detail').value;
-  ['us','ecg','fast','efast'].forEach(k=>f.exam_texts[k]=$(`#exam_${k}_txt`).value);
-  if($('#plrL')){ f.stroke.plrL=$('#plrL').value; f.stroke.plrR=$('#plrR').value; f.stroke.gaze=$('#str_gaze').value; f.stroke.nyst=$('#str_nyst').value; f.stroke.btr=$('#str_btr').value; f.stroke.ptr=$('#str_ptr').value; f.stroke.babinski=$('#str_babinski').checked; f.stroke.chaddock=$('#str_chaddock').checked; f.stroke.nihssMemo=$('#nihss_memo')?.value||''; }
-  state.consideration=$('#consideration').value; state.destination.custom=$('#destination_custom').value; state.destination.reason=$('#selection_reason').value;
-  updateDestinationDisplay(); render(); localStorage.setItem('heliRecordV33', JSON.stringify(state));
+  state.request = {type:$('#request_type').value, detail:$('#request_detail').value, time:$('#request_time').value};
+  state.patient = {history:$('#patient_history').value, medication:$('#patient_medication').value, allergy:$('#patient_allergy').value, lastMeal:$('#last_meal_time').value, hospital:$('#patient_hospital').value};
+  state.heli = {takeoff:$('#heli_takeoff').value, lz_landing:$('#heli_lz_landing').value, fd_contact:$('#fd_contact').value, turn_type:$('#turn_type').value, transport_takeoff:$('#transport_takeoff').value, hospital_arrival:$('#hospital_arrival').value};
+  state.ems.aware=$('#ems_aware').value; state.ems.arrival=$('#ems_arrival').value; state.ems.contact=$('#ems_contact').value; state.ems.lz=$('#ems_lz').value; state.ems.o2_flow=$('#ems_o2_flow').value; state.ems.procedures_detail=$('#ems_procedures_detail').value;
+  state.fd.bs=$('#fd_bs').value; state.fd.exam_detail=$('#fd_exam_detail').value; state.fd.procedure_detail=$('#fd_procedure_detail').value; state.fd.drug_detail=$('#fd_drug_detail').value;
+  ['us','ecg','fast','efast'].forEach(t => state.fd.exam_texts[t] = $(`#exam_${t}_txt`).value);
+  if($('#plrL')) {
+    if(!state.fd.stroke) state.fd.stroke = {mmt:{}, nihss:{}};
+    state.fd.stroke.plrL=$('#plrL').value; state.fd.stroke.plrR=$('#plrR').value; state.fd.stroke.gaze=$('#str_gaze').value; state.fd.stroke.nyst=$('#str_nyst').value; state.fd.stroke.btr=$('#str_btr').value; state.fd.stroke.ptr=$('#str_ptr').value; state.fd.stroke.babinski=$('#str_babinski').checked; state.fd.stroke.chaddock=$('#str_chaddock').checked; state.fd.stroke.nihssMemo=$('#nihss_memo')?.value || '';
+  }
+  state.consideration=$('#consideration').value; const custom = $('#destination_custom').value.trim();
+  if(custom) { state.destination.custom=custom; if(state.destination.hospital) { state.destination.hospital=''; renderHospitalChips(); } } else state.destination.custom='';
+  state.destination.reason=$('#selection_reason').value; updateDestinationDisplay(); render();
+  localStorage.setItem('heliRecordV33', JSON.stringify(state));
 }
 
 function render() { $('#outText').textContent = generateReport(); }
-function fmtFinding(l, s) { if(s==='on')return l; if(s==='+')return `${l}(+)`; if(s==='-')return `${l}(-)`; return null; }
-function extractFindings(d, c) { let a=[]; (Array.isArray(d)?d:(d.normal||[]).concat(d.abn||[])).forEach(l=>{ if(c[l]){let s=fmtFinding(l,c[l]);if(s)a.push(s);} }); return a.join('、'); }
-
-function generateReport() {
-  let r = '━━━━━━━━━━━━━━━━━━━━\n　病院前医療活動記録\n━━━━━━━━━━━━━━━━━━━━\n\n【要請情報】\n要請方法：'+(state.request.type||'（未選択）')+'\n';
-  if(state.request.time) r+=`要請時刻：${state.request.time}\n`;
-  if(state.request.detail) r+=`要請内容：${state.request.detail}\n`;
-  r+='\n【患者情報】\n既往：'+state.patient.history+'\n薬：'+state.patient.medication+'\nアレ：'+state.patient.allergy+'\nかかりつけ：'+state.patient.hospital+'\n';
-  r+='\n【タイムライン】\n';
-  [['ヘリ離陸',state.heli.takeoff],['ヘリLZ着',state.heli.lz_landing],['FD接触',state.heli.fd_contact],['活動',state.heli.turn_type]].forEach(x=>r+=`${x[0]}：${x[1]}\n`);
-  r+='\n【救急隊】\n'; e=state.ems; e.vitals.forEach(v=>{ let gs=v.gcs.v==='T'?(v.gcs.e+v.gcs.m)+'T':(v.gcs.e+parseInt(v.gcs.v)+v.gcs.m); r+=`[${v.time}] ${v.sbp}/${v.dbp}, HR${v.hr}, RR${v.rr}, SpO2 ${v.spo2||'--'}%, GCS${gs}, JCS${v.jcs}\n`; });
-  r+='所見：'+(e.exam_tab==='general'?['head','resp','card','abd','limb','neuro'].map(k=>extractFindings(EMS_GEN_GROUPS[k],e.chips)).filter(Boolean).join('、'):extractFindings(EMS_TRA_GROUPS[e.exam_tab]||EMS_STR_GROUPS[e.exam_tab]||EMS_CPA_GROUPS[e.exam_tab],e.chips))+'\n';
-  r+='\n【ドクター】\n'; f=state.fd; f.vitals.forEach(v=>{ let gs=v.gcs.v==='T'?(v.gcs.e+v.gcs.m)+'T':(v.gcs.e+parseInt(v.gcs.v)+v.gcs.m); r+=`[${v.time}] ${v.sbp}/${v.dbp}, HR${v.hr}, RR${v.rr}, SpO2 ${v.spo2||'--'}%, GCS${gs}, JCS${v.jcs}\n`; });
-  if(f.exam_tab==='stroke'){ r+=`【脳卒中】瞳孔L${f.stroke.pupilL} R${f.stroke.pupilR}, 対光L${f.stroke.plrL} R${f.stroke.plrR}, MMT(${f.stroke.mmt.ru},${f.stroke.mmt.lu},${f.stroke.mmt.rl},${f.stroke.mmt.ll})\n`; }
-  if(f.exam_tab==='cpa'){ f.cpaEvents.forEach((ev,i)=>r+=`心停止${i+1}：${ev.arrestTime} ${ev.rhythm}, ROSC${ev.roscTime}\n`); }
-  r+='\n【評価】\n'+state.problems.map((p,i)=>'#'+(i+1)+' '+p).join('\n')+'\n考察：'+state.consideration+'\n\n【搬送先】\n医療機関：'+(state.destination.custom||state.destination.hospital||'（未選択）')+'\n理由：'+state.destination.reason+'\n━━━━━━━━━━━━━━━━━━━━\n記録作成：'+new Date().toLocaleString(); return r;
+// fmtFinding 記号を半角に修正
+function fmtFinding(lbl, st) { if(st==='on') return lbl; if(st==='+') return `${lbl}(+)`; if(st==='-') return `${lbl}(-)`; return null; }
+function extractFindings(def, chips) {
+  const arr = []; const labels = Array.isArray(def) ? def : (def.normal || []).concat(def.abn || []);
+  labels.forEach(lbl => { const st = chips[lbl]; if(st) { const s = fmtFinding(lbl, st); if(s) arr.push(s); } });
+  return arr.join('、');
 }
 
-function saveData() { const blob = new Blob([JSON.stringify(state, null, 2)], {type: 'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `heli_${new Date().toISOString().slice(0,10)}.json`; a.click(); }
-function loadData() { const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json'; input.onchange = e => { const f = e.target.files[0]; if(f) { const r = new FileReader(); r.onload = ev => { try { state = JSON.parse(ev.target.result); restoreUI(); } catch(err) { alert('読込エラー'); } }; r.readAsText(f); } }; input.click(); }
-function resetData() { if(confirm('リセットしますか？')){ localStorage.removeItem('heliRecordV33'); location.reload(); } }
+// generateReport SpO2半角修正 & ドクター身体所見反映
+function generateReport() {
+  let r = '━━━━━━━━━━━━━━━━━━━━\n　病院前医療活動記録 v3.11\n━━━━━━━━━━━━━━━━━━━━\n\n【要請情報】\n要請：'+(state.request.type||'--')+' '+(state.request.time||'')+'\n'+(state.request.detail||'')+'\n\n【患者情報】\n既往：'+state.patient.history+'\n薬：'+state.patient.medication+'\nアレ：'+state.patient.allergy+'\nかかりつけ：'+state.patient.hospital+'\n\n【救急隊活動】\n';
+  state.ems.vitals.forEach(v => {
+    const gcs = v.gcs.v === 'T' ? `E${v.gcs.e}VTM${v.gcs.m}(${v.gcs.e+v.gcs.m}T)` : `E${v.gcs.e}V${v.gcs.v}M${v.gcs.m}(${v.gcs.e+parseInt(v.gcs.v)+v.gcs.m})`;
+    r += `[${v.time}] BP:${v.sbp}/${v.dbp} HR:${v.hr} RR:${v.rr} SpO2:${v.spo2}% BT:${v.bt}℃ GCS:${gcs} JCS:${v.jcs}\n`;
+  });
+  const eTab = state.ems.exam_tab;
+  if(eTab==='general') [['頭頚部',EMS_GEN_GROUPS.head,'head'],['呼吸器',EMS_GEN_GROUPS.resp,'resp'],['循環器',EMS_GEN_GROUPS.card,'card'],['腹部',EMS_GEN_GROUPS.abd,'abd'],['四肢',EMS_GEN_GROUPS.limb,'limb'],['神経',EMS_GEN_GROUPS.neuro,'neuro']].forEach(([t,d,k])=>{ const s=extractFindings(d,state.ems.chips),m=state.ems.memos.general[k]; if(s||m)r+=`【${t}】${[s,m].filter(Boolean).join('。')}\n`; });
+  else if(eTab==='trauma') [['頭部・顔面',EMS_TRA_GROUPS.head,'head'],['頸部',EMS_TRA_GROUPS.neck,'neck'],['胸部',EMS_TRA_GROUPS.chest,'chest'],['腹部',EMS_TRA_GROUPS.abd,'abd'],['骨盤',EMS_TRA_GROUPS.pelvis,'pelvis'],['四肢',EMS_TRA_GROUPS.limb,'limb']].forEach(([t,d,k])=>{ const s=extractFindings(d,state.ems.chips),m=state.ems.memos.trauma[k]; if(s||m)r+=`【${t}】${[s,m].filter(Boolean).join('。')}\n`; });
+  
+  r += '\n【フライトドクター活動】\n';
+  state.fd.vitals.forEach(v => {
+    const gcs = v.gcs.v === 'T' ? `E${v.gcs.e}VTM${v.gcs.m}(${v.gcs.e+v.gcs.m}T)` : `E${v.gcs.e}V${v.gcs.v}M${v.gcs.m}(${v.gcs.e+parseInt(v.gcs.v)+v.gcs.m})`;
+    r += `[${v.time}] BP:${v.sbp}/${v.dbp} HR:${v.hr} RR:${v.rr} SpO2:${v.spo2}% BT:${v.bt}℃ GCS:${gcs} JCS:${v.jcs}\n`;
+  });
+  // ドクター身体所見出力ロジック追加
+  const fTab = state.fd.exam_tab;
+  if(fTab==='general') [['頭頚部',FD_GEN_GROUPS.head,'head'],['呼吸器',FD_GEN_GROUPS.resp,'resp'],['循環器',FD_GEN_GROUPS.card,'card'],['腹部',FD_GEN_GROUPS.abd,'abd'],['四肢',FD_GEN_GROUPS.limb,'limb'],['神経',FD_GEN_GROUPS.neuro,'neuro']].forEach(([t,d,k])=>{ const s=extractFindings(d,state.fd.chips),m=state.fd.memos.general[k]; if(s||m)r+=`【${t}】${[s,m].filter(Boolean).join('。')}\n`; });
+  else if(fTab==='trauma') [['頭部・顔面',FD_TRA_GROUPS.head,'head'],['頸部',FD_TRA_GROUPS.neck,'neck'],['胸部',FD_TRA_GROUPS.chest,'chest'],['腹部',FD_TRA_GROUPS.abd,'abd'],['骨盤',FD_TRA_GROUPS.pelvis,'pelvis'],['四肢',FD_TRA_GROUPS.limb,'limb']].forEach(([t,d,k])=>{ const s=extractFindings(d,state.fd.chips),m=state.fd.memos.trauma[k]; if(s||m)r+=`【${t}】${[s,m].filter(Boolean).join('。')}\n`; });
+  else if(fTab==='stroke') {
+    const cn = extractFindings(FD_STR_GROUPS.cn, state.fd.chips); const cnM = state.fd.memos?.stroke?.cn || ''; if(cn||cnM) r+=`【脳神経】${[cn,cnM].filter(Boolean).join('。')}\n`;
+    const str = state.fd.stroke || {}; r+=`【瞳孔・運動】L:${str.pupilL}mm R:${str.pupilR}mm, PLR L:${str.plrL} R:${str.plrR}, MMT(${str.mmt?.ru},${str.mmt?.lu},${str.mmt?.rl},${str.mmt?.ll}), NIHSS:${calcNihssSum()}点\n`;
+  }
+  else if(fTab==='cpa') state.fd.cpaEvents.forEach((ev,i)=>r+=`【心停止${i+1}】${ev.arrestTime} ${ev.rhythm}, ROSC:${ev.roscTime||'--'}, Memo:${ev.memo}\n`);
+
+  r += '\n【評価】\n'; state.problems.forEach((p,i)=>r+=`#${i+1} ${p}\n`);
+  if(state.consideration) r+=`考察：${state.consideration}\n`;
+  r += '\n【搬送先】\n'+(state.destination.custom||state.destination.hospital||'--')+'\n理由：'+state.destination.reason+'\n━━━━━━━━━━━━━━━━━━━━\n作成：'+new Date().toLocaleString(); return r;
+}
+
+function saveData() { const b = new Blob([JSON.stringify(state, null, 2)], {type: 'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `heli_${new Date().toISOString().slice(0,10)}.json`; a.click(); }
+function loadData() {
+  const i = document.createElement('input'); i.type = 'file'; i.accept = 'application/json'; i.onchange = e => {
+    const f = e.target.files[0]; if(f) { const r = new FileReader(); r.onload = ev => { try { state = JSON.parse(ev.target.result); restoreUI(); } catch(err) { alert('読込失敗'); } }; r.readAsText(f); }
+  }; i.click();
+}
+function resetData() { if(confirm('データをリセットしますか？')){ localStorage.removeItem('heliRecordV33'); location.reload(); } }
 
 function restoreUI() {
   const f=state.fd, e=state.ems;
@@ -1379,11 +1929,10 @@ function restoreUI() {
   $('#ems_aware').value=e.aware; $('#ems_arrival').value=e.arrival; $('#ems_contact').value=e.contact; $('#ems_lz').value=e.lz; $('#ems_o2_flow').value=e.o2_flow; $('#ems_procedures_detail').value=e.procedures_detail;
   $('#fd_bs_display').textContent=f.bs; $('#fd_abg_type').value=f.abg_type; toggleAbg();
   ['us','ecg','fast','efast'].forEach(k=>{ $(`#exam_${k}`).checked=f.exams[k]; $(`#exam_${k}_txt`).value=f.exam_texts[k]; toggleExam(k); });
-  if($('#plrL')){ $('#pupilL_display').textContent=f.stroke.pupilL; $('#pupilR_display').textContent=f.stroke.pupilR; $('#plrL').value=f.stroke.plrL; $('#plrR').value=f.stroke.plrR; $('#str_gaze').value=f.stroke.gaze; $('#str_nyst').value=f.stroke.nyst; $('#mmt_ru_display').textContent=f.stroke.mmt.ru; $('#mmt_lu_display').textContent=f.stroke.mmt.lu; $('#mmt_rl_display').textContent=f.stroke.mmt.rl; $('#mmt_ll_display').textContent=f.stroke.mmt.ll; $('#str_btr').value=f.stroke.btr; $('#str_ptr').value=f.stroke.ptr; $('#str_babinski').checked=f.stroke.babinski; $('#str_chaddock').checked=f.stroke.chaddock; if($('#nihss_memo')) $('#nihss_memo').value = f.stroke.nihssMemo; renderNihss(); }
+  if($('#plrL')){ $('#pupilL_display').textContent=f.stroke.pupilL; $('#pupilR_display').textContent=f.stroke.pupilR; $('#plrL').value=f.stroke.plrL; $('#plrR').value=f.stroke.plrR; $('#str_gaze').value=f.stroke.gaze; $('#str_nyst').value=f.stroke.nyst; $('#mmt_ru_display').textContent=f.stroke.mmt.ru; $('#mmt_lu_display').textContent=f.stroke.mmt.lu; $('#mmt_rl_display').textContent=f.stroke.mmt.rl; $('#mmt_ll_display').textContent=f.stroke.mmt.ll; $('#str_btr').value=f.stroke.btr; $('#str_ptr').value=f.stroke.ptr; $('#str_babinski').checked=f.stroke.babinski; $('#str_chaddock').checked=f.stroke.chaddock; renderNihss(); }
   $('#consideration').value=state.consideration; $('#destination_custom').value=state.destination.custom; $('#selection_reason').value=state.destination.reason;
   renderEmsVitals(); renderFdVitals(); renderHospitalChips(); renderCpaEvents(); renderAbgPills(); renderProblems(); bindMemos();
-  renderProcedureChips('ems_procedures', e.procedures_items, e.procedures); renderProcedureChips('fd_procedures', f.procedures_items, f.procedures); renderProcedureChips('fd_drugs', f.drugs_items, f.drugs);
-  render();
+  renderProcedureChips('ems_procedures', e.procedures_items, e.procedures); renderProcedureChips('fd_procedures', f.procedures_items, f.procedures); renderProcedureChips('fd_drugs', f.drugs_items, f.drugs); render();
 }
 
 function init() {
@@ -1392,7 +1941,7 @@ function init() {
   [['#ems-gen-head',EMS_GEN_GROUPS.head],['#ems-gen-resp',EMS_GEN_GROUPS.resp],['#ems-gen-card',EMS_GEN_GROUPS.card],['#ems-gen-abd',EMS_GEN_GROUPS.abd],['#ems-gen-limb',EMS_GEN_GROUPS.limb],['#ems-gen-neuro',EMS_GEN_GROUPS.neuro],['#ems-tra-head',EMS_TRA_GROUPS.head],['#ems-tra-neck',EMS_TRA_GROUPS.neck],['#ems-tra-chest',EMS_TRA_GROUPS.chest],['#ems-tra-abd',EMS_TRA_GROUPS.abd],['#ems-tra-pelvis',EMS_TRA_GROUPS.pelvis],['#ems-tra-limb',EMS_TRA_GROUPS.limb],['#ems-cpa-rhythm',EMS_CPA_GROUPS.rhythm],['#ems-cpa-witness',EMS_CPA_GROUPS.witness],['#ems-cpa-airway',EMS_CPA_GROUPS.airway],['#ems-cpa-circulation',EMS_CPA_GROUPS.circulation],['#ems-cpa-chest',EMS_CPA_GROUPS.chest],['#ems-str-conscious',EMS_STR_GROUPS.conscious],['#ems-str-face',EMS_STR_GROUPS.face],['#ems-str-motor',EMS_STR_GROUPS.motor],['#ems-str-other',EMS_STR_GROUPS.other]].forEach(x=>mountChips(x[0],x[1],'ems'));
   [['#fd-gen-head',FD_GEN_GROUPS.head],['#fd-gen-resp',FD_GEN_GROUPS.resp],['#fd-gen-card',FD_GEN_GROUPS.card],['#fd-gen-abd',FD_GEN_GROUPS.abd],['#fd-gen-limb',FD_GEN_GROUPS.limb],['#fd-gen-neuro',FD_GEN_GROUPS.neuro],['#fd-tra-head',FD_TRA_GROUPS.head],['#fd-tra-neck',FD_TRA_GROUPS.neck],['#fd-tra-chest',FD_TRA_GROUPS.chest],['#fd-tra-abd',FD_TRA_GROUPS.abd],['#fd-tra-pelvis',FD_TRA_GROUPS.pelvis],['#fd-tra-limb',FD_TRA_GROUPS.limb],['#fd-str-cn',FD_STR_GROUPS.cn],['#fd-str-higher',FD_STR_GROUPS.higher]].forEach(x=>mountChips(x[0],x[1],'fd'));
   setupExamTabs('ems'); setupExamTabs('fd'); bindMemos(); restoreUI();
-  $('#copyOut').onclick=()=>{ navigator.clipboard.writeText($('#outText').textContent); const btn=$('#copyOut'); btn.textContent='✓ 完了'; setTimeout(()=>btn.textContent='📋 コピー',1500); };
+  $('#copyOut').onclick=()=>{ navigator.clipboard.writeText($('#outText').textContent); const b=$('#copyOut'); b.textContent='✓ 完了'; setTimeout(()=>b.textContent='📋 コピー',1500); };
 }
 init();
 </script>
